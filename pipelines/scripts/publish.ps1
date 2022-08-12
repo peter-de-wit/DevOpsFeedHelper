@@ -15,9 +15,8 @@ $WarningPreference = "SilentlyContinue"
 $ProgressPreference = "SilentlyContinue"
 
 $RootPath = Resolve-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath "..\..\")
-$ModulePath = Join-Path -Path $RootPath -ChildPath "src"
+$ModulePath = Resolve-Path -Path (Join-Path -Path $RootPath -ChildPath "src\DevOpsFeedHelper")
 
-<# Publish To PowerShell Gallery (www.powershellgallery.com) #>
+# Publish To PowerShell Gallery (www.powershellgallery.com)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
 Publish-Module -Path $ModulePath -NuGetApiKey $ApiKey -Repository PSGallery
