@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "ms-vscode.powershell",
+    "ms-azure-devops.azure-pipelines",
+    "DavidAnson.vscode-markdownlint"
+  ]
+}
