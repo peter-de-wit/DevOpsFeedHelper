@@ -592,9 +592,13 @@ Function Register-DevOpsFeed
 
   $Uri_v2 = $Script:SourceUri_v2 -f $OrganizationName, $ProjectNameEncoded, $FeedName
   $Uri_v3 = $Script:SourceUri_v3 -f $OrganizationName, $ProjectNameEncoded, $FeedName
+
+  # Below code is commented out because in specific situations NuGet keeps using the device flow.
+  <#
   "Register-DevOpsFeed - Registering PS repository for feed '{0}' and location '{1}'..." -f $FeedName, $Uri_v2 | Write-Verbose
   Register-PSRepository -Name $FeedName -InstallationPolicy "Trusted" -SourceLocation $Uri_v2 -PublishLocation $Uri_v2 -Credential $Creds | Out-Null
   "Register-DevOpsFeed - PS repository for feed '{0}' registered." -f $FeedName | Write-Verbose
+  #>
 
   # Register a source for NuGet and for PowershellGet
   $PackageSources = Get-PackageSource -Name $FeedName -ErrorAction SilentlyContinue
@@ -610,11 +614,11 @@ Function Register-DevOpsFeed
 
   "Register-DevOpsFeed - Registering package source for feed '{0}', provider '{1}', location '{2}'..." -f $FeedName, "NuGet", $Uri_v3 | Write-Verbose
   Register-PackageSource -Name $FeedName -Location $Uri_v3 -ProviderName "NuGet" -Trusted -SkipValidate -Credential $Creds | Out-Null
-  "Register-DevOpsFeed - package source for feed '{0}' and provider '{1}' registered." -f $FeedName, "NuGet" | Write-Verbose
+  "Register-DevOpsFeed - Package source for feed '{0}' and provider '{1}' registered." -f $FeedName, "NuGet" | Write-Verbose
 
   "Register-DevOpsFeed - Registering package source for feed '{0}', provider '{1}', location '{2}'..." -f $FeedName, "PowershellGet", $Uri_v2 | Write-Verbose
   Register-PackageSource -Name $FeedName -Location $Uri_v2 -ProviderName "PowerShellGet" -PackageManagementProvider "NuGet" -Trusted -Credential $Creds | Out-Null
-  "Register-DevOpsFeed - package source for feed '{0}' and provider '{1}' registered." -f $FeedName, "PowershellGet" | Write-Verbose
+  "Register-DevOpsFeed - Package source for feed '{0}' and provider '{1}' registered." -f $FeedName, "PowershellGet" | Write-Verbose
 
   "Connected with DevOps feed '{0}'" -f $FeedName | Write-Host
 
@@ -656,7 +660,7 @@ Function Find-DevOpsFeedModule
     [String] $Name,
 
     [Parameter(Mandatory=$False)]
-    [String] $FeedName = $($Script:DevOpsFeedContext.DefaultFeedName),
+    [String] $FeedName = $($Script:DevOpsFeedContext.FeedName),
 
     [Parameter(Mandatory=$False)]
     [String] $FeedEnvironmentVariableNameForUser = $($Script:DefaultFeedEnvironmentVariableNameForUser),
