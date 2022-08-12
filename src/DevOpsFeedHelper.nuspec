@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package>
+  <metadata>
+    <id>DevOpsFeedHelper</id>
+    <version>$version$</version>
+    <authors>Peter de Wit</authors>
+    <description>This module exposes functionality to easily connect and/or maintain connections to DevOps Artifacts Feeds through PowerShell.</description>
+    <releaseNotes>$releasenotes$</releaseNotes>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <copyright>(c) 2022 Peter de Wit. All rights reserved.</copyright>
+    <tags>Azure DevOps Artifacts Feed Credential</tags>
+    <license type="expression">MIT</license>
+    <projectUrl>https://github.com/peter-de-wit/DevOpsFeedHelper</projectUrl>
+    <dependencies>
+    </dependencies>
+  </metadata>
+</package>
