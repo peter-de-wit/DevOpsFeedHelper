@@ -26,11 +26,11 @@ $Script:DefaultFeedEnvironmentVariableNameForUser = "DevOpsSharedFeedUser"
 $Script:DefaultFeedEnvironmentVariableNameForPat = "DevOpsSharedFeedPAT"
 $Script:DefaultFeedEncryptionEntropy = "6a9909f8-bbf6-48d0-b6fa-ff3543fa4c75"
 $Script:FeedEncryptionEntropy = $Script:DefaultFeedEncryptionEntropy
-$Script:DefaultOrganisationName = ""
+$Script:DefaultOrganizationName = ""
 $Script:DefaultProjectName = ""
 $Script:DefaultFeedName = ""
 $Script:DevOpsFeedContext = [PsCustomObject] @{
-  OrganisationName = $Script:DefaultOrganisationName
+  OrganizationName = $Script:DefaultOrganizationName
   ProjectName = $Script:DefaultProjectName
   FeedName = $Script:DefaultFeedName
 }
@@ -443,7 +443,7 @@ Function Set-DevOpsFeedContext
   Param(
     [Parameter(Mandatory=$True)]
     [ValidateNotNullOrEmpty()]
-    [String] $OrganisationName,
+    [String] $OrganizationName,
 
     [Parameter(Mandatory=$True)]
     [ValidateNotNullOrEmpty()]
@@ -457,7 +457,7 @@ Function Set-DevOpsFeedContext
 
   "Set-DevOpsFeedContext- Saving DevOps Feed context within current session..." | Write-Verbose
   $NewContext = [PsCustomObject] @{
-    OrganisationName = $OrganisationName
+    OrganizationName = $OrganizationName
     ProjectName = $ProjectName
     FeedName = $FeedName
   }
@@ -508,7 +508,7 @@ Function Register-DevOpsFeed
   [CmdletBinding()]
   Param(
     [Parameter(Mandatory=$False)]
-    [String] $OrganisationName = $($Script:DevOpsFeedContext.OrganisationName),
+    [String] $OrganizationName = $($Script:DevOpsFeedContext.OrganizationName),
 
     [Parameter(Mandatory=$False)]
     [String] $ProjectName = $($Script:DevOpsFeedContext.ProjectName),
@@ -530,7 +530,7 @@ Function Register-DevOpsFeed
   )
 
   # If one of the required connection info properties is not found, we cannot proceed.
-  If ([String]::IsNullOrEmpty($OrganisationName) -or [String]::IsNullOrEmpty($ProjectName) -or [String]::IsNullOrEmpty($FeedName))
+  If ([String]::IsNullOrEmpty($OrganizationName) -or [String]::IsNullOrEmpty($ProjectName) -or [String]::IsNullOrEmpty($FeedName))
   {
     Throw "Not all connection fields have a value. Consider using function Set-DevOpsFeedContext first."
     Return;
@@ -554,7 +554,7 @@ Function Register-DevOpsFeed
       Return;
     }
 
-    $Creds = Get-Credential -Message ("Enter your username and PAT token to connect to '{0}' feed within '{1}' organisation." -f $FeedName, $OrganisationName)
+    $Creds = Get-Credential -Message ("Enter your username and PAT token to connect to '{0}' feed within organization '{1}'." -f $FeedName, $OrganizationName)
     If (-not($Creds))
     {
       Throw "Cannot proceed without credential info".
@@ -590,8 +590,8 @@ Function Register-DevOpsFeed
     "Register-DevOpsFeed - No repository found for feed '{0}'." -f $FeedName | Write-Verbose
   }
 
-  $Uri_v2 = $Script:SourceUri_v2 -f $OrganisationName, $ProjectNameEncoded, $FeedName
-  $Uri_v3 = $Script:SourceUri_v3 -f $OrganisationName, $ProjectNameEncoded, $FeedName
+  $Uri_v2 = $Script:SourceUri_v2 -f $OrganizationName, $ProjectNameEncoded, $FeedName
+  $Uri_v3 = $Script:SourceUri_v3 -f $OrganizationName, $ProjectNameEncoded, $FeedName
   "Register-DevOpsFeed - Registering PS repository for feed '{0}' and location '{1}'..." -f $FeedName, $Uri_v2 | Write-Verbose
   Register-PSRepository -Name $FeedName -InstallationPolicy "Trusted" -SourceLocation $Uri_v2 -PublishLocation $Uri_v2 -Credential $Creds | Out-Null
   "Register-DevOpsFeed - PS repository for feed '{0}' registered." -f $FeedName | Write-Verbose
@@ -642,7 +642,7 @@ Function Register-DevOpsFeed
     I could not get this to work, so I created this module.
 
   .EXAMPLE
-    PS> Register-DevOpsFeed OrganisationName "Contoso" -ProjectName "myproject" -FeedName "Feed1" -NonInteractive
+    PS> Register-DevOpsFeed OrganizationName "Contoso" -ProjectName "myproject" -FeedName "Feed1" -NonInteractive
 
   #>
 }

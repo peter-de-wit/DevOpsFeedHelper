@@ -29,7 +29,7 @@ PS> Update-Module -Name DevOpsFeedHelper
 You should start with setting up the feed context. This can be done through:
 
 ```PowerShell
-PS> Set-DevOpsFeedContext -OrganisationName "Contoso" -ProjectName "MyFirstProject" -FeedName "PrivateFeed"
+PS> Set-DevOpsFeedContext -OrganizationName "Contoso" -ProjectName "MyFirstProject" -FeedName "PrivateFeed"
 ```
 
 Next step is setting up credentials. This can be done with the following code. Enter your PAT when password is requested.
