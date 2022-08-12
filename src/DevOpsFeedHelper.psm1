@@ -38,7 +38,7 @@ $Script:DevOpsFeedContext = [PsCustomObject] @{
 Function Test-IsWindowsPlatform
 {
   If ($PsVersionTable.PSVersion.Major -eq 5) { Return $True }
-  If ($PsVersionTable.Platform -and $PsVersionTable.StartsWith("Win")) { Return $True }
+  If ($PsVersionTable.Platform -and $PsVersionTable.Platform.StartsWith("Win")) { Return $True }
   Return $False
 }
 
