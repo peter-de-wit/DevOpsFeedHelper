@@ -8,6 +8,8 @@ This repository contains of a Powershell module that can help with connecting to
 This module is created because the current version of PowerShellGet has some limitations with connecting to DevOps Artifacts Feeds.
 This should be fixed in a later release of PowerShellGet. See notes within function Register-DevOpsFeed.
 
+When using msbuild, NuGet.exe and/or dotnet [Azure Artifacts Credential Provider](https://github.com/microsoft/artifacts-credprovider) is GA.
+
 ## Installation and Update
 
 This module is available on the [PowerShell Gallery](https://www.powershellgallery.com/packages/DevOpsFeedHelper)

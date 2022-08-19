@@ -17,6 +17,9 @@
     version of PowerShellGet has some limitations with connecting to DevOps Artifacts Feeds. This should be fixed
     in a later release of PowerShellGet. See notes within function Register-DevOpsFeed.
 
+    When using msbuild, NuGet.exe and/or dotnet Azure Artifacts Credential Provider is GA:
+    https://github.com/microsoft/artifacts-credprovider
+
 #>
 
 #Global variables
@@ -828,6 +831,141 @@ Function Install-DevOpsFeedModule
   #>
 }
 
+Function New-NuGetPackage
+{
+  [CmdletBinding(SupportsShouldProcess, ConfirmImpact="Low" )]
+  Param(
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $NuGetSpecFile,
+
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $RootFolder,
+
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $OutputFolder,
+
+    [Parameter(Mandatory=$False)]
+    [ValidateNotNullOrEmpty()]
+    [String] $Version,
+
+    [Parameter(Mandatory=$False)]
+    [String[]] $Excludes = @{},
+
+    [Parameter(Mandatory=$False)]
+    [HashTable] $Properties = @{},
+
+    [Parameter(Mandatory=$False)]
+    [ValidateNotNullOrEmpty()]
+    [String] $NuGetExecToolPath = $($env:NUGETEXETOOLPATH)
+  )
+
+  If ([String]::IsNullOrEmpty($NuGetExecToolPath))
+  {
+    Throw "Environment variable 'NUGETEXETOOLPATH' is not found and needed to determine the exact location of nuget.exe. Operation canceled."
+    Return;
+  }
+
+  $NuGetExecToolPath = Resolve-Path -Path $NuGetExecToolPath
+  If (-not(Test-Path -Path $NuGetExecToolPath -PathType "Leaf"))
+  {
+    Throw "nuget tool was not found at '$($NuGetExecToolPath)'. Operation canceled."
+    Return;
+  }
+
+  $NuGetSpecFile = Resolve-Path -Path $NuGetSpecFile
+  If (-Not(Test-Path -Path $NuGetSpecFile -PathType "Leaf"))
+  {
+    Throw "Could not find nuspec file '$($NuGetSpecFile)'. Operation canceled."
+    Return;
+  }
+
+  $RootFolder = Resolve-Path -Path $RootFolder
+  If (-Not(Test-Path -Path $RootFolder -PathType "Container"))
+  {
+    Throw "Root folder '$($RootFolder)' could not be found. Operation canceled."
+    Return;
+  }
+
+  $OutputFolder = Resolve-Path -Path $OutputFolder
+  If (-Not(Test-Path -Path $OutputFolder -PathType "Container"))
+  {
+    Throw "Output folder '$($OutputFolder)' could not be found. Operation canceled."
+    Return;
+  }
+
+  $PropertiesText = ""
+  If ($Properties -and $Properties.Count -gt 0)
+  {
+    $PropertiesArray = @()
+    ForEach($Key in $Properties.Keys)
+    {
+      $Value = $Properties[$Key]
+      If ($Null -ne $Value)
+      {
+        $PropertiesArray += "{0}={1}" -f $Key, $Value.ToString() # We only accept strings
+      }
+    }
+
+    If ($PropertiesArray.Length -gt 0)
+    {
+      $PropertiesText = $PropertiesArray -join ";"
+    }
+  }
+
+  $CmdParameters = @($NuGetSpecFile, "-OutputDirectory", $OutputFolder, "-BasePath", $RootFolder)
+  If (-not [String]::IsNullOrEmpty($Version))
+  {
+    $CmdParameters += "-Version", $Version
+  }
+
+  If (-not [String]::IsNullOrEmpty($PropertiesText))
+  {
+    $CmdParameters += "-Properties", $PropertiesText
+  }
+
+  If ($Excludes -and $Excludes.Count -gt 0)
+  {
+    $Excludes | ForEach-Object { $CmdParameters += "-Exclude", $_ }
+  }
+
+  If ($PSCmdlet.ShouldProcess("nuget.exe pack", ("Creating new nuget package in folder '{0}' from nuspec '{1}'." -f $OutputFolder, $NuGetSpecFile)))
+  {
+    & $NuGetExecToolPath pack $CmdParameters
+  }
+
+ <#
+  .SYNOPSIS
+    Creates a new NuGet package file from the given nuspec file and by using the nuget executable.
+
+  .DESCRIPTION
+    This function can be used as an alternative to pipeline tasks or other commands (dotnet pack i.e.) to pack nuget packages.
+    By using this function the consumer has more flexibility of the package before publishing it to private feeds.
+
+  .PARAMETER NuGetSpecFile
+    The location the to nuget spec file.
+
+  .PARAMETER RootFolder
+    The root folder of the project. All files within this root will be packed.
+
+  .PARAMETER OutputFolder
+    The generated package will be saved to this location.
+
+  .PARAMETER Version
+    OPTIONAL: Use this parameter to overrule the version within the nuspec file (if specified).
+
+  .PARAMETER Properties
+    OPTIONAL: Use this hashtable to provide additional properties to the nuget executable to fill placeholders within the nuspec file.
+
+  .PARAMETER NuGetExecToolPath
+    OPTIONAL: Use this parameter if not running from a Azure DevOps pipeline. It needs the exact location of the nuget.exe executable.
+    default: $env:NUGETEXETOOLPATH
+
+  #>
+}
+
 # Exports
 Export-ModuleMember -Function "Update-PowerShellGetToLatest"
 Export-ModuleMember -Function "Set-DevOpsFeedEncryptionEntropy"
@@ -839,3 +977,4 @@ Export-ModuleMember -Function "Set-DevOpsFeedCredential" -Alias "Set-DevOpsCrede
 Export-ModuleMember -Function "Register-DevOpsFeed"
 Export-ModuleMember -Function "Find-DevOpsFeedModule"
 Export-ModuleMember -Function "Install-DevOpsFeedModule"
+Export-ModuleMember -Function "New-NuGetPackage"
