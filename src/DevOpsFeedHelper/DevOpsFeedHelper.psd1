@@ -8,7 +8,7 @@
   RootModule           = 'DevOpsFeedHelper.psm1'
 
   # Version number of this module.
-  ModuleVersion        = '0.2.5'
+  ModuleVersion        = '0.2.11'
 
   # Supported PSEditions
   CompatiblePSEditions = @("Desktop", "Core")
@@ -76,6 +76,7 @@
     "Register-DevOpsFeed",
     "Find-DevOpsFeedModule",
     "Install-DevOpsFeedModule",
+    "Find-NuGetExecutable",
     "New-NuGetPackage"
   )
 

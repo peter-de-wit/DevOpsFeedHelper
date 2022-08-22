@@ -831,6 +831,38 @@ Function Install-DevOpsFeedModule
   #>
 }
 
+Function Find-NuGetExecutable
+{
+  [Cmdletbinding()]
+  [OutputType([String])]
+  Param()
+
+  # Try to find NuGet executable from the where statement.
+  $NuGetLocation = (Get-Command -Syntax "nuget.exe" -ErrorAction SilentlyContinue)
+
+  If (-not [String]::IsNullOrEmpty($NuGetLocation) -and (Test-Path -Path $NuGetLocation -PathType "Leaf" -ErrorAction SilentlyContinue))
+  {
+    $NuGetLocation = (Resolve-Path -Path $NuGetLocation).Path
+  }
+  # If NuGet wasn't found, we can try to get it from a pipeline environment variable
+  ElseIf (-not [String]::IsNullOrEmpty($env:NUGETEXETOOLPATH) -and (Test-Path -Path $env:NUGETEXETOOLPATH -PathType "Leaf" -ErrorAction SilentlyContinue))
+  {
+    $NuGetLocation = $env:NUGETEXETOOLPATH
+  }
+
+  $NuGetLocation
+
+ <#
+  .SYNOPSIS
+    Finds the nuget.exe executable by searching PATHS.
+
+  .DESCRIPTION
+    This function can be used to locate the nuget.exe executable.
+    It not found within the PATHS as an alternative it will look at the DevOps pipeline environment variable NUGETEXETOOLPATH.
+
+  #>
+}
+
 Function New-NuGetPackage
 {
   [CmdletBinding(SupportsShouldProcess, ConfirmImpact="Low" )]
@@ -852,19 +884,19 @@ Function New-NuGetPackage
     [String] $Version,
 
     [Parameter(Mandatory=$False)]
-    [String[]] $Excludes = @{},
+    [String[]] $Excludes = @(),
 
     [Parameter(Mandatory=$False)]
     [HashTable] $Properties = @{},
 
     [Parameter(Mandatory=$False)]
     [ValidateNotNullOrEmpty()]
-    [String] $NuGetExecToolPath = $($env:NUGETEXETOOLPATH)
+    [String] $NuGetExecToolPath = $(Find-NuGetExecutable)
   )
 
   If ([String]::IsNullOrEmpty($NuGetExecToolPath))
   {
-    Throw "Environment variable 'NUGETEXETOOLPATH' is not found and needed to determine the exact location of nuget.exe. Operation canceled."
+    Throw "Environment variable 'NUGETEXETOOLPATH' is not found and could not locate nuget.exe within PATH. Operation canceled."
     Return;
   }
 
@@ -933,6 +965,7 @@ Function New-NuGetPackage
 
   If ($PSCmdlet.ShouldProcess("nuget.exe pack", ("Creating new nuget package in folder '{0}' from nuspec '{1}'." -f $OutputFolder, $NuGetSpecFile)))
   {
+    "Executing the following command: `n {0} pack {1}" -f $NuGetExecToolPath, ($CmdParameters -join " ") | Write-Verbose
     & $NuGetExecToolPath pack $CmdParameters
   }
 
@@ -977,4 +1010,5 @@ Export-ModuleMember -Function "Set-DevOpsFeedCredential" -Alias "Set-DevOpsCrede
 Export-ModuleMember -Function "Register-DevOpsFeed"
 Export-ModuleMember -Function "Find-DevOpsFeedModule"
 Export-ModuleMember -Function "Install-DevOpsFeedModule"
+Export-ModuleMember -Function "Find-NuGetExecutable"
 Export-ModuleMember -Function "New-NuGetPackage"
