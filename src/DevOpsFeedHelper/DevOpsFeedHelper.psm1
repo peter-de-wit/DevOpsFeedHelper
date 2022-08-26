@@ -17,22 +17,31 @@
     version of PowerShellGet has some limitations with connecting to DevOps Artifacts Feeds. This should be fixed
     in a later release of PowerShellGet. See notes within function Register-DevOpsFeed.
 
+    When using msbuild, NuGet.exe and/or dotnet Azure Artifacts Credential Provider is GA:
+    https://github.com/microsoft/artifacts-credprovider
+
 #>
 
 #Global variables
-$Script:SourceUri_v2 = "https://pkgs.dev.azure.com/{0}/{1}/_packaging/{2}/nuget/v2"
+$Script:SourceUri_v2 = "https://pkgs.dev.azure.com/{0}/{1}/_packaging/{2}/nuget/v2/"
 $Script:SourceUri_v3 = "https://pkgs.dev.azure.com/{0}/{1}/_packaging/{2}/nuget/v3/index.json"
 $Script:DefaultFeedEnvironmentVariableNameForUser = "DevOpsSharedFeedUser"
 $Script:DefaultFeedEnvironmentVariableNameForPat = "DevOpsSharedFeedPAT"
 $Script:DefaultFeedEncryptionEntropy = "6a9909f8-bbf6-48d0-b6fa-ff3543fa4c75"
 $Script:FeedEncryptionEntropy = $Script:DefaultFeedEncryptionEntropy
-$Script:DefaultOrganizationName = ""
-$Script:DefaultProjectName = ""
 $Script:DefaultFeedName = ""
 $Script:DevOpsFeedContext = [PsCustomObject] @{
-  OrganizationName = $Script:DefaultOrganizationName
-  ProjectName = $Script:DefaultProjectName
   FeedName = $Script:DefaultFeedName
+}
+
+<#
+  Custom attribute to easy pass parameters from wrapper functions
+#>
+Class PassParameterAttribute : Attribute
+{
+  [Bool] $PassAlways = $False
+  [String] $PassAs = ""
+  PassParameterAttribute() {}
 }
 
 Function Test-IsWindowsPlatform
@@ -441,14 +450,6 @@ Function Set-DevOpsFeedContext
   [CmdletBinding(SupportsShouldProcess)]
   [Alias("Set-DevOpsContext")]
   Param(
-    [Parameter(Mandatory=$True)]
-    [ValidateNotNullOrEmpty()]
-    [String] $OrganizationName,
-
-    [Parameter(Mandatory=$True)]
-    [ValidateNotNullOrEmpty()]
-    [String] $ProjectName,
-
     [Parameter(Mandatory=$False)]
     [ValidateNotNullOrEmpty()]
     [String] $FeedName
@@ -457,8 +458,6 @@ Function Set-DevOpsFeedContext
 
   "Set-DevOpsFeedContext- Saving DevOps Feed context within current session..." | Write-Verbose
   $NewContext = [PsCustomObject] @{
-    OrganizationName = $OrganizationName
-    ProjectName = $ProjectName
     FeedName = $FeedName
   }
 
@@ -503,15 +502,75 @@ Function Get-DevOpsFeedContext
   #>
 }
 
-Function Register-DevOpsFeed
+Function Unregister-DevOpsFeed
 {
   [CmdletBinding()]
   Param(
     [Parameter(Mandatory=$False)]
-    [String] $OrganizationName = $($Script:DevOpsFeedContext.OrganizationName),
+    [String] $FeedName = $($Script:DevOpsFeedContext.FeedName)
+  )
 
-    [Parameter(Mandatory=$False)]
-    [String] $ProjectName = $($Script:DevOpsFeedContext.ProjectName),
+  # If one of the required connection info properties is not found, we cannot proceed.
+  If ([String]::IsNullOrEmpty($FeedName))
+  {
+    Throw "Feed cannot be null."
+    Return;
+  }
+
+  # Maybe look at SourceLocation instead of feedname?
+  $Repo = Get-PsRepository -Name $FeedName -ErrorAction SilentlyContinue
+  If ($Null -ne $Repo)
+  {
+    "Unregister-DevOpsFeed - Found repository '{0}'. Unregistering..." -f $Repo.Name | Write-Verbose
+    $Repo | Unregister-PSRepository -ErrorAction SilentlyContinue | Out-Null
+  }
+  Else
+  {
+    "Unregister-DevOpsFeed - No repository found for feed '{0}'." -f $FeedName | Write-Verbose
+  }
+
+  $PackageSources = Get-PackageSource -Name $FeedName -ErrorAction SilentlyContinue
+  If ($Null -ne $PackageSources)
+  {
+    "Unregister-DevOpsFeed - Found {0} package sources for feed '{1}'. Unregistering..." -f $PackageSources.Count, $FeedName | Write-Verbose
+    $PackageSources | Unregister-PackageSource -ErrorAction SilentlyContinue | Out-Null
+  }
+  Else
+  {
+    "Unregister-DevOpsFeed - No package source found for feed '{0}'." -f $FeedName | Write-Verbose
+  }
+
+  If ($Null -ne $Repo -or $Null -ne $PackageSources)
+  {
+    "Disconnected from DevOps feed '{0}'" -f $FeedName | Write-Host
+  }
+
+  <#
+  .SYNOPSIS
+    Powershell function to unregister a connection to a DevOps artifacts feed.
+
+  .DESCRIPTION
+    This function can be used to unregister a new connection to a DevOps artifacts feed.
+
+  .OUTPUTS
+    NONE
+
+  .EXAMPLE
+    PS> Register-DevOpsFeed -FeedName "Feed1"
+  #>
+}
+
+Function Register-DevOpsFeed
+{
+  [CmdletBinding()]
+  Param(
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $OrganizationName,
+
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $ProjectId,
 
     [Parameter(Mandatory=$False)]
     [String] $FeedName = $($Script:DevOpsFeedContext.FeedName),
@@ -530,14 +589,11 @@ Function Register-DevOpsFeed
   )
 
   # If one of the required connection info properties is not found, we cannot proceed.
-  If ([String]::IsNullOrEmpty($OrganizationName) -or [String]::IsNullOrEmpty($ProjectName) -or [String]::IsNullOrEmpty($FeedName))
+  If ([String]::IsNullOrEmpty($FeedName))
   {
-    Throw "Not all connection fields have a value. Consider using function Set-DevOpsFeedContext first."
+    Throw "Feed name cannot be null. Consider using function Set-DevOpsFeedContext first."
     Return;
   }
-
-  # TODO: More encoding needed, only spacing is implemented for now.
-  $ProjectNameEncoded = $ProjectName.Replace(" ", "%20")
 
   $FeedCredentialParams = @{
     FeedEnvironmentVariableNameForUser = $FeedEnvironmentVariableNameForUser
@@ -578,20 +634,11 @@ Function Register-DevOpsFeed
     }
   }
 
-  # Maybe look at SourceLocation instead of feedname?
-  $Repo = Get-PsRepository -Name $FeedName -ErrorAction SilentlyContinue
-  If ($Null -ne $Repo)
-  {
-    "Register-DevOpsFeed - Found repository '{0}'. Unregistering..." -f $Repo.Name | Write-Verbose
-    $Repo | Unregister-PSRepository | Out-Null
-  }
-  Else
-  {
-    "Register-DevOpsFeed - No repository found for feed '{0}'." -f $FeedName | Write-Verbose
-  }
+  # Unregister possible feed info
+  Unregister-DevOpsFeed -FeedName $Feedname -ErrorAction SilentlyContinue
 
-  $Uri_v2 = $Script:SourceUri_v2 -f $OrganizationName, $ProjectNameEncoded, $FeedName
-  $Uri_v3 = $Script:SourceUri_v3 -f $OrganizationName, $ProjectNameEncoded, $FeedName
+  $Uri_v2 = $Script:SourceUri_v2 -f $OrganizationName, $ProjectId, $FeedName
+  $Uri_v3 = $Script:SourceUri_v3 -f $OrganizationName, $ProjectId, $FeedName
 
   # Below code is commented out because in specific situations NuGet keeps using the device flow.
   <#
@@ -601,17 +648,6 @@ Function Register-DevOpsFeed
   #>
 
   # Register a source for NuGet and for PowershellGet
-  $PackageSources = Get-PackageSource -Name $FeedName -ErrorAction SilentlyContinue
-  If ($Null -ne $PackageSources)
-  {
-    "Register-DevOpsFeed - Found {0} package sources for feed '{1}'. Unregistering..." -f $PackageSources.Count, $FeedName | Write-Verbose
-    $PackageSources | Unregister-PackageSource | Out-Null
-  }
-  Else
-  {
-    "Register-DevOpsFeed - No package source found for feed '{0}'." -f $FeedName | Write-Verbose
-  }
-
   "Register-DevOpsFeed - Registering package source for feed '{0}', provider '{1}', location '{2}'..." -f $FeedName, "NuGet", $Uri_v3 | Write-Verbose
   Register-PackageSource -Name $FeedName -Location $Uri_v3 -ProviderName "NuGet" -Trusted -SkipValidate -Credential $Creds | Out-Null
   "Register-DevOpsFeed - Package source for feed '{0}' and provider '{1}' registered." -f $FeedName, "NuGet" | Write-Verbose
@@ -646,7 +682,7 @@ Function Register-DevOpsFeed
     I could not get this to work, so I created this module.
 
   .EXAMPLE
-    PS> Register-DevOpsFeed OrganizationName "Contoso" -ProjectName "myproject" -FeedName "Feed1" -NonInteractive
+    PS> Register-DevOpsFeed OrganizationName "Contoso" -ProjectId "f3d20478-9f40-4c29-8657-c397d98eea42" -FeedName "Feed1" -NonInteractive
 
   #>
 }
@@ -723,27 +759,196 @@ Function Find-DevOpsFeedModule
 
 Function Install-DevOpsFeedModule
 {
-  [CmdletBinding()]
+  [CmdletBinding(SupportsShouldProcess)]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'MinimumVersion',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'MaximumVersion',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'RequiredVersion',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Scope',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Force',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'AllowPreRelease',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'AcceptLicense',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'SkipPublisherCheck',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'AllowClobber',
+    Justification = 'Parameters are read dynamically')]
   Param(
     [Parameter(Mandatory=$True)]
     [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute()]
     [String] $Name,
 
     [Parameter(Mandatory=$False)]
     [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute()]
     [String] $MinimumVersion,
 
     [Parameter(Mandatory=$False)]
     [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute()]
     [String] $MaximumVersion,
 
     [Parameter(Mandatory=$False)]
     [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute()]
     [String] $RequiredVersion,
 
     [Parameter(Mandatory=$False)]
     [ValidateSet("AllUsers", "CurrentUser")]
+    [PassParameterAttribute(PassAlways=$True)]
     [String] $Scope = "CurrentUser",
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $AllowClobber,
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $SkipPublisherCheck,
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $Force,
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $AllowPreRelease,
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $AcceptLicense,
+
+    [Parameter(Mandatory=$False)]
+    [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute(PassAlways=$True, PassAs="Repository")]
+    [String] $FeedName = $($Script:DevOpsFeedContext.FeedName),
+
+    [Parameter(Mandatory=$False)]
+    [String] $FeedEnvironmentVariableNameForUser = $($Script:DefaultFeedEnvironmentVariableNameForUser),
+
+    [Parameter(Mandatory=$False)]
+    [String] $FeedEnvironmentVariableNameForPat = $($Script:DefaultFeedEnvironmentVariableNameForPat)
+  )
+
+  If ([String]::IsNullOrEmpty($FeedName))
+  {
+    Throw "FeedName cannot be null. Please provide a FeedName or set DevOps context first through function Set-DevOpsFeedContext."
+    Return;
+  }
+
+  If ($Null -eq (Get-PSRepository -name $FeedName -ErrorAction SilentlyContinue))
+  {
+    Throw ("Repository for feed '{0}' is not registered. Please connect with feed first through function Register-DevOpsFeed. Operation canceled." -f $FeedName)
+    Return;
+  }
+
+  $FeedCredentialParams = @{
+    FeedEnvironmentVariableNameForUser = $FeedEnvironmentVariableNameForUser
+    FeedEnvironmentVariableNameForPat = $FeedEnvironmentVariableNameForPat
+  }
+
+  $Creds = Get-DevOpsFeedCredential @FeedCredentialParams
+  If ($Null -eq $Creds)
+  {
+    Throw "No credentials found. Please save credentials first through function Set-DevOpsFeedCredential. Operation canceled."
+    Return;
+  }
+
+  $Module = Find-DevOpsFeedModule -Name $Name -FeedName $FeedName
+  If ($Null -eq $Module)
+  {
+    Throw ("Module '{0}' was not found within feed '{1}'. Operation canceled." -f $Name, $FeedName)
+    Return;
+  }
+
+  $InstallParameters = @{
+    Credential = $Creds
+  }
+
+  # We use our PassParameterAttribute to define which parameters we should pass along
+  $LocalVariables = Get-Variable -Scope "Local"
+  $ParameterList = (Get-Command -Name $PSCmdlet.MyInvocation.InvocationName).Parameters.Values `
+    | Where-Object { $_.Attributes.TypeId.Name -eq [PassParameterAttribute].Name } `
+    | Select-Object -Property *, @{ Name="AttributeValue"; Expression = { $_.Attributes | Where-Object { $_.TypeId.Name -eq [PassParameterAttribute].Name} } } -ExcludeProperty "Attributes" `
+    | Select-Object -Property "Name", "SwitchParameter", `
+        @{ Name = "PassAlways"; Expression = {$_.AttributeValue.PassAlways} }, `
+        @{ Name = "PassAs"; Expression = { If ([String]::IsNullOrEmpty($_.AttributeValue.PassAs)) { $_.Name } Else { $_.AttributeValue.PassAs }} }, `
+        @{ Name = "Value"; Expression = { $ParamName = $_.Name; $LocalVariables | Where-Object { $_.Name -eq $ParamName } | Select-Object -ExpandProperty Value } }, `
+        @{ Name = "Bound"; Expression = { $PSBoundParameters.ContainsKey($_.Name)  } }
+
+  $ParameterList | Where-Object { $True -eq $_.Bound -or $True -eq $_.PassAlways } | ForEach-Object { $InstallParameters.Add($_.PassAs, $_.Value) }
+
+  Install-Module @InstallParameters
+
+  <#
+  .SYNOPSIS
+    Powershell function that works as a wrapper around Install-Module to install modules from a DevOps Artifacts feed.
+
+  .DESCRIPTION
+    This function can be used to install modules within a previous registered DevOps artifacts feed.
+
+  .OUTPUTS
+    NONE
+
+  .EXAMPLE
+    PS> Install-DevOpsFeedModule -Name "My.PrivateModule" -MinimumVersion "1.2.2"
+
+  #>
+}
+
+Function Update-DevOpsFeedModule
+{
+  [CmdletBinding(SupportsShouldProcess)]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'MaximumVersion',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'RequiredVersion',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Scope',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Force',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'AllowPreRelease',
+    Justification = 'Parameters are read dynamically')]
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'AcceptLicense',
+    Justification = 'Parameters are read dynamically')]
+  Param(
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute()]
+    [String] $Name,
+
+    [Parameter(Mandatory=$False)]
+    [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute()]
+    [String] $MaximumVersion,
+
+    [Parameter(Mandatory=$False)]
+    [ValidateNotNullOrEmpty()]
+    [PassParameterAttribute()]
+    [String] $RequiredVersion,
+
+    [Parameter(Mandatory=$False)]
+    [ValidateSet("AllUsers", "CurrentUser")]
+    [PassParameterAttribute(PassAlways=$True)]
+    [String] $Scope = "CurrentUser",
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $Force,
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $AllowPreRelease,
+
+    [Parameter(Mandatory=$False)]
+    [PassParameterAttribute()]
+    [Switch] $AcceptLicense,
 
     [Parameter(Mandatory=$False)]
     [ValidateNotNullOrEmpty()]
@@ -787,30 +992,24 @@ Function Install-DevOpsFeedModule
     Return;
   }
 
-  $InstallParameters = @{
-    Repository = $FeedName
-    Name = $Name
-    Scope = $Scope
-    AllowClobber = $True
+  $UpdateParameters = @{
     Credential = $Creds
   }
 
-  If (-not([String]::IsNullOrEmpty($MinimumVersion)))
-  {
-    $InstallParameters.Add("MinimumVersion", $MinimumVersion)
-  }
+  # We use our PassParameterAttribute to define which parameters we should pass along
+  $LocalVariables = Get-Variable -Scope "Local"
+  $ParameterList = (Get-Command -Name $PSCmdlet.MyInvocation.InvocationName).Parameters.Values `
+    | Where-Object { $_.Attributes.TypeId.Name -eq [PassParameterAttribute].Name } `
+    | Select-Object -Property *, @{ Name="AttributeValue"; Expression = { $_.Attributes | Where-Object { $_.TypeId.Name -eq [PassParameterAttribute].Name} } } -ExcludeProperty "Attributes" `
+    | Select-Object -Property "Name", "SwitchParameter", `
+        @{ Name = "PassAlways"; Expression = {$_.AttributeValue.PassAlways} }, `
+        @{ Name = "PassAs"; Expression = { If ([String]::IsNullOrEmpty($_.AttributeValue.PassAs)) { $_.Name } Else { $_.AttributeValue.PassAs }} }, `
+        @{ Name = "Value"; Expression = { $ParamName = $_.Name; $LocalVariables | Where-Object { $_.Name -eq $ParamName } | Select-Object -ExpandProperty Value } }, `
+        @{ Name = "Bound"; Expression = { $PSBoundParameters.ContainsKey($_.Name)  } }
 
-  If (-not([String]::IsNullOrEmpty($MaximumVersion)))
-  {
-    $InstallParameters.Add("MaximumVersion", $MaximumVersion)
-  }
+  $ParameterList | Where-Object { $True -eq $_.Bound -or $True -eq $_.PassAlways } | ForEach-Object { $UpdateParameters.Add($_.PassAs, $_.Value) }
 
-  If (-not([String]::IsNullOrEmpty($RequiredVersion)))
-  {
-    $InstallParameters.Add("RequiredVersion", $RequiredVersion)
-  }
-
-  Install-Module @InstallParameters
+  Update-Module @UpdateParameters
 
   <#
   .SYNOPSIS
@@ -828,6 +1027,174 @@ Function Install-DevOpsFeedModule
   #>
 }
 
+Function Find-NuGetExecutable
+{
+  [Cmdletbinding()]
+  [OutputType([String])]
+  Param()
+
+  # Try to find NuGet executable from the where statement.
+  $NuGetLocation = (Get-Command -Syntax "nuget.exe" -ErrorAction SilentlyContinue)
+
+  If (-not [String]::IsNullOrEmpty($NuGetLocation) -and (Test-Path -Path $NuGetLocation -PathType "Leaf" -ErrorAction SilentlyContinue))
+  {
+    $NuGetLocation = (Resolve-Path -Path $NuGetLocation).Path
+  }
+  # If NuGet wasn't found, we can try to get it from a pipeline environment variable
+  ElseIf (-not [String]::IsNullOrEmpty($env:NUGETEXETOOLPATH) -and (Test-Path -Path $env:NUGETEXETOOLPATH -PathType "Leaf" -ErrorAction SilentlyContinue))
+  {
+    $NuGetLocation = $env:NUGETEXETOOLPATH
+  }
+
+  $NuGetLocation
+
+ <#
+  .SYNOPSIS
+    Finds the nuget.exe executable by searching PATHS.
+
+  .DESCRIPTION
+    This function can be used to locate the nuget.exe executable.
+    It not found within the PATHS as an alternative it will look at the DevOps pipeline environment variable NUGETEXETOOLPATH.
+
+  #>
+}
+
+Function New-NuGetPackage
+{
+  [CmdletBinding(SupportsShouldProcess, ConfirmImpact="Low" )]
+  Param(
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $NuGetSpecFile,
+
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $RootFolder,
+
+    [Parameter(Mandatory=$True)]
+    [ValidateNotNullOrEmpty()]
+    [String] $OutputFolder,
+
+    [Parameter(Mandatory=$False)]
+    [ValidateNotNullOrEmpty()]
+    [String] $Version,
+
+    [Parameter(Mandatory=$False)]
+    [String[]] $Excludes = @(),
+
+    [Parameter(Mandatory=$False)]
+    [HashTable] $Properties = @{},
+
+    [Parameter(Mandatory=$False)]
+    [ValidateNotNullOrEmpty()]
+    [String] $NuGetExecToolPath = $(Find-NuGetExecutable)
+  )
+
+  If ([String]::IsNullOrEmpty($NuGetExecToolPath))
+  {
+    Throw "Environment variable 'NUGETEXETOOLPATH' is not found and could not locate nuget.exe within PATH. Operation canceled."
+    Return;
+  }
+
+  $NuGetExecToolPath = Resolve-Path -Path $NuGetExecToolPath
+  If (-not(Test-Path -Path $NuGetExecToolPath -PathType "Leaf"))
+  {
+    Throw "nuget tool was not found at '$($NuGetExecToolPath)'. Operation canceled."
+    Return;
+  }
+
+  $NuGetSpecFile = Resolve-Path -Path $NuGetSpecFile
+  If (-Not(Test-Path -Path $NuGetSpecFile -PathType "Leaf"))
+  {
+    Throw "Could not find nuspec file '$($NuGetSpecFile)'. Operation canceled."
+    Return;
+  }
+
+  $RootFolder = Resolve-Path -Path $RootFolder
+  If (-Not(Test-Path -Path $RootFolder -PathType "Container"))
+  {
+    Throw "Root folder '$($RootFolder)' could not be found. Operation canceled."
+    Return;
+  }
+
+  $OutputFolder = Resolve-Path -Path $OutputFolder
+  If (-Not(Test-Path -Path $OutputFolder -PathType "Container"))
+  {
+    Throw "Output folder '$($OutputFolder)' could not be found. Operation canceled."
+    Return;
+  }
+
+  $PropertiesText = ""
+  If ($Properties -and $Properties.Count -gt 0)
+  {
+    $PropertiesArray = @()
+    ForEach($Key in $Properties.Keys)
+    {
+      $Value = $Properties[$Key]
+      If ($Null -ne $Value)
+      {
+        $PropertiesArray += "{0}={1}" -f $Key, $Value.ToString() # We only accept strings
+      }
+    }
+
+    If ($PropertiesArray.Length -gt 0)
+    {
+      $PropertiesText = $PropertiesArray -join ";"
+    }
+  }
+
+  $CmdParameters = @($NuGetSpecFile, "-OutputDirectory", $OutputFolder, "-BasePath", $RootFolder)
+  If (-not [String]::IsNullOrEmpty($Version))
+  {
+    $CmdParameters += "-Version", $Version
+  }
+
+  If (-not [String]::IsNullOrEmpty($PropertiesText))
+  {
+    $CmdParameters += "-Properties", $PropertiesText
+  }
+
+  If ($Excludes -and $Excludes.Count -gt 0)
+  {
+    $Excludes | ForEach-Object { $CmdParameters += "-Exclude", $_ }
+  }
+
+  If ($PSCmdlet.ShouldProcess("nuget.exe pack", ("Creating new nuget package in folder '{0}' from nuspec '{1}'." -f $OutputFolder, $NuGetSpecFile)))
+  {
+    "Executing the following command: `n {0} pack {1}" -f $NuGetExecToolPath, ($CmdParameters -join " ") | Write-Verbose
+    & $NuGetExecToolPath pack $CmdParameters
+  }
+
+ <#
+  .SYNOPSIS
+    Creates a new NuGet package file from the given nuspec file and by using the nuget executable.
+
+  .DESCRIPTION
+    This function can be used as an alternative to pipeline tasks or other commands (dotnet pack i.e.) to pack nuget packages.
+    By using this function the consumer has more flexibility of the package before publishing it to private feeds.
+
+  .PARAMETER NuGetSpecFile
+    The location the to nuget spec file.
+
+  .PARAMETER RootFolder
+    The root folder of the project. All files within this root will be packed.
+
+  .PARAMETER OutputFolder
+    The generated package will be saved to this location.
+
+  .PARAMETER Version
+    OPTIONAL: Use this parameter to overrule the version within the nuspec file (if specified).
+
+  .PARAMETER Properties
+    OPTIONAL: Use this hashtable to provide additional properties to the nuget executable to fill placeholders within the nuspec file.
+
+  .PARAMETER NuGetExecToolPath
+    OPTIONAL: Use this parameter if not running from a Azure DevOps pipeline. It needs the exact location of the nuget.exe executable.
+    default: $env:NUGETEXETOOLPATH
+
+  #>
+}
+
 # Exports
 Export-ModuleMember -Function "Update-PowerShellGetToLatest"
 Export-ModuleMember -Function "Set-DevOpsFeedEncryptionEntropy"
@@ -836,6 +1203,10 @@ Export-ModuleMember -Function "Get-DevOpsFeedContext" -Alias "Get-DevOpsContext"
 Export-ModuleMember -Function "Remove-DevOpsFeedCredential" -Alias "Remove-DevOpsCredential"
 Export-ModuleMember -Function "Get-DevOpsFeedCredential" -Alias "Get-DevOpsCredential"
 Export-ModuleMember -Function "Set-DevOpsFeedCredential" -Alias "Set-DevOpsCredential"
+Export-ModuleMember -Function "Unregister-DevOpsFeed"
 Export-ModuleMember -Function "Register-DevOpsFeed"
 Export-ModuleMember -Function "Find-DevOpsFeedModule"
 Export-ModuleMember -Function "Install-DevOpsFeedModule"
+Export-ModuleMember -Function "Update-DevOpsFeedModule"
+Export-ModuleMember -Function "Find-NuGetExecutable"
+Export-ModuleMember -Function "New-NuGetPackage"
