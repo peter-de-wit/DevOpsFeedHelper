@@ -952,7 +952,6 @@ Function Update-DevOpsFeedModule
 
     [Parameter(Mandatory=$False)]
     [ValidateNotNullOrEmpty()]
-    [PassParameterAttribute(PassAlways=$True, PassAs="Repository")]
     [String] $FeedName = $($Script:DevOpsFeedContext.FeedName),
 
     [Parameter(Mandatory=$False)]
