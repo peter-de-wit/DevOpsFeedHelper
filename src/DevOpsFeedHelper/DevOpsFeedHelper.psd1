@@ -8,7 +8,7 @@
   RootModule           = 'DevOpsFeedHelper.psm1'
 
   # Version number of this module.
-  ModuleVersion        = '0.2.14'
+  ModuleVersion        = '0.2.15'
 
   # Supported PSEditions
   CompatiblePSEditions = @("Desktop", "Core")
@@ -23,7 +23,7 @@
   CompanyName          = 'Witti B.V.'
 
   # Copyright statement for this module
-  Copyright            = '(c) 2022 Peter de Wit. All rights reserved.'
+  Copyright            = '(c) 2023 Peter de Wit. All rights reserved.'
 
   # Description of the functionality provided by this module
   Description          = 'This module exposes functionality to easily connect and/or maintain connections to DevOps Artifacts Feeds through PowerShell.'

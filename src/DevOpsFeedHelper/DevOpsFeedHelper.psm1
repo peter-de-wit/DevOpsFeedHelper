@@ -313,8 +313,8 @@ Function Remove-DevOpsFeedCredential
   )
 
   "Remove-DevOpsFeedCredential - Removing local credentials stored within environment settings..." | Write-Verbose
-  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForUser, $Null, [System.EnvironmentVariableTarget]::User)
-  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForPat, $Null, [System.EnvironmentVariableTarget]::User)
+  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForUser, $Null)
+  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForPat, $Null)
   "All credentials removed from environment settings." | Write-Host
   "Remove-DevOpsFeedCredential - Done." | Write-Verbose
 
@@ -349,8 +349,8 @@ Function Get-DevOpsFeedCredential
     [Switch] $NoEncryption
   )
 
-  $EnvValueUser = [System.Environment]::GetEnvironmentVariable($FeedEnvironmentVariableNameForUser, [System.EnvironmentVariableTarget]::User)
-  $EnvValuePat = [System.Environment]::GetEnvironmentVariable($FeedEnvironmentVariableNameForPat, [System.EnvironmentVariableTarget]::User)
+  $EnvValueUser = [System.Environment]::GetEnvironmentVariable($FeedEnvironmentVariableNameForUser)
+  $EnvValuePat = [System.Environment]::GetEnvironmentVariable($FeedEnvironmentVariableNameForPat)
 
   If (-not [String]::IsNullOrEmpty($EnvValueUser) -and -not [String]::IsNullOrEmpty(($EnvValuePat)))
   {
@@ -426,8 +426,8 @@ Function Set-DevOpsFeedCredential
   }
 
   "Set-DevOpsFeedCredential - Writing DevOps credentials to environment variables..." | Write-Verbose
-  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForUser, $Username, [System.EnvironmentVariableTarget]::User)
-  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForPat, $PatToken, [System.EnvironmentVariableTarget]::User)
+  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForUser, $Username)
+  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForPat, $PatToken)
   "DevOps Artifacts Feed Credentials saved in local environment settings." | Write-Host
   "Set-DevOpsFeedCredential - Done." | Write-Verbose
 
@@ -682,7 +682,7 @@ Function Register-DevOpsFeed
     I could not get this to work, so I created this module.
 
   .EXAMPLE
-    PS> Register-DevOpsFeed OrganizationName "Contoso" -ProjectId "f3d20478-9f40-4c29-8657-c397d98eea42" -FeedName "Feed1" -NonInteractive
+    PS> Register-DevOpsFeed -OrganizationName "Contoso" -ProjectId "f3d20478-9f40-4c29-8657-c397d98eea42" -FeedName "Feed1" -NonInteractive
 
   #>
 }
