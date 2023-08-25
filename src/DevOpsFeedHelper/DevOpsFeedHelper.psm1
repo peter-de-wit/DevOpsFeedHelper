@@ -29,6 +29,9 @@ $Script:DefaultFeedEnvironmentVariableNameForUser = "DevOpsSharedFeedUser"
 $Script:DefaultFeedEnvironmentVariableNameForPat = "DevOpsSharedFeedPAT"
 $Script:DefaultFeedEncryptionEntropy = "6a9909f8-bbf6-48d0-b6fa-ff3543fa4c75"
 $Script:FeedEncryptionEntropy = $Script:DefaultFeedEncryptionEntropy
+$Script:ConfigFolder = Join-Path -Path ([Environment]::GetFolderPath("ApplicationData")) -ChildPath "DevOpsFeedHelper"
+$Script:ConfigPath = Join-Path -Path $ConfigFolder -ChildPath "config.json"
+
 $Script:DefaultFeedName = ""
 $Script:DevOpsFeedContext = [PsCustomObject] @{
   FeedName = $Script:DefaultFeedName
@@ -315,7 +318,12 @@ Function Remove-DevOpsFeedCredential
   "Remove-DevOpsFeedCredential - Removing local credentials stored within environment settings..." | Write-Verbose
   [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForUser, $Null)
   [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForPat, $Null)
-  "All credentials removed from environment settings." | Write-Host
+  If (Test-Path -Path $Script:ConfigPath -PathType "Leaf")
+  {
+    Remove-Item -Path $Script:ConfigPath -Force | Out-Null
+  }
+
+  "Credentials removed from environment settings and/or local configuration." | Write-Host
   "Remove-DevOpsFeedCredential - Done." | Write-Verbose
 
   <#
@@ -369,11 +377,36 @@ Function Get-DevOpsFeedCredential
     $PatTokenS = ConvertTo-SecureString -String $EnvValuePat -AsPlainText -Force
     $Cred = New-Object System.Management.Automation.PSCredential($EnvValueUser, $PatTokenS)
     $Cred
-  }
+    Return
+  } `
   Else
   {
     "Get-DevOpsFeedCredential - No DevOps credentials found within environment variables." | Write-Verbose
   }
+
+  If (-not (Test-Path -Path $Script:ConfigPath -PathType "Leaf"))
+  {
+    "Get-DevOpsFeedCredential - No DevOps credentials found within config file." | Write-Verbose
+    Return
+  }
+
+  $Config = Get-Content -Path $Script:ConfigPath -Raw | ConvertFrom-Json
+  $PatToken = $Config.PatToken
+  If (($NoEncryption.IsPresent -and $True -eq $NoEncryption) -or -not $Config.PatToken.EndsWith("="))
+  {
+    # Seems like encryption was not used.
+    "Get-DevOpsFeedCredential - PAT token is unencrypted or NoEncryption switch is set." | Write-Verbose
+  }
+  Else
+  {
+    "Get-DevOpsFeedCredential - Looks like the PAT token is encrypted with a local machine key. Decrypting..." | Write-Verbose
+    $PatToken = $PatToken | ConvertFrom-EncryptedStringWithDpApi
+  }
+
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', 'No other option available')]
+  $PatTokenS = ConvertTo-SecureString -String $PatToken -AsPlainText -Force
+  $Cred = New-Object System.Management.Automation.PSCredential($Config.Username, $PatTokenS)
+  $Cred
 
   <#
   .SYNOPSIS
@@ -412,7 +445,10 @@ Function Set-DevOpsFeedCredential
     [String] $FeedEnvironmentVariableNameForPat = $($Script:DefaultFeedEnvironmentVariableNameForPat),
 
     [Parameter(Mandatory=$False)]
-    [Switch] $NoEncryption
+    [Switch] $NoEncryption,
+
+    [Parameter(Mandatory=$False)]
+    [Switch] $StoreInEnv
   )
 
   If ($NoEncryption.IsPresent -and $True -eq $NoEncryption)
@@ -425,10 +461,23 @@ Function Set-DevOpsFeedCredential
     $PatToken = $PatToken | ConvertTo-EncryptedStringWithDpApi
   }
 
-  "Set-DevOpsFeedCredential - Writing DevOps credentials to environment variables..." | Write-Verbose
-  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForUser, $Username)
-  [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForPat, $PatToken)
-  "DevOps Artifacts Feed Credentials saved in local environment settings." | Write-Host
+  If ($StoreInEnv.IsPresent -and $True -eq $StoreInEnv)
+  {
+    "Set-DevOpsFeedCredential - Writing DevOps credentials to environment variables..." | Write-Verbose
+    [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForUser, $Username)
+    [System.Environment]::SetEnvironmentVariable($FeedEnvironmentVariableNameForPat, $PatToken)
+    "DevOps Artifacts Feed Credentials saved in local environment settings." | Write-Host
+  } `
+  Else
+  {
+    "Set-DevOpsFeedCredential - Writing DevOps credentials to local config '{0}'..." -f $Script:ConfigPath | Write-Verbose
+    New-Item -Path $Script:ConfigFolder -ItemType "Directory" -Force | Out-Null
+    [PSCustomObject] @{
+      Username = $Username
+      PatToken = $PatToken
+    } | ConvertTo-Json | Out-File -Path $Script:ConfigPath -Encoding "Utf8" -Force
+  }
+
   "Set-DevOpsFeedCredential - Done." | Write-Verbose
 
  <#
@@ -600,7 +649,7 @@ Function Register-DevOpsFeed
     FeedEnvironmentVariableNameForPat = $FeedEnvironmentVariableNameForPat
   }
 
-  # I advise to store the PAT (with only read access to feeds) in an user environment variable.
+  # I advise to store the PAT (with only read access to feeds) in an user environment variable or local file.
   $Creds = Get-DevOpsFeedCredential @FeedCredentialParams
   If ($Null -eq $Creds)
   {
